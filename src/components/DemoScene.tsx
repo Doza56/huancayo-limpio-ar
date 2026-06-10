@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { useGameStore, LEVELS } from '../store/gameStore'
@@ -11,6 +11,8 @@ interface TargetData {
     position: [number, number, number]
     type: string
     radius: number
+    isGolden?: boolean
+    spawnTime?: number
 }
 
 interface FloatingLabel {
@@ -36,7 +38,16 @@ function DemoSceneInner({ targets, setTargets, setLabels }: {
     setLabels: React.Dispatch<React.SetStateAction<FloatingLabel[]>>
 }) {
     const { camera, gl } = useThree()
-    const { level, recycleItem, hitHazardous, gameState } = useGameStore()
+    const { 
+        level, 
+        recycleItem, 
+        hitHazardous, 
+        gameState,
+        bossActive,
+        bossHp,
+        hitBoss,
+        hasBeatenBoss
+    } = useGameStore()
     const raycaster = useRef(new THREE.Raycaster())
 
     const addLabel = (text: string, color: string) => {
@@ -44,6 +55,64 @@ function DemoSceneInner({ targets, setTargets, setLabels }: {
         setLabels(prev => [...prev, { id, text, color }])
         setTimeout(() => setLabels(prev => prev.filter(l => l.id !== id)), 1200)
     }
+
+    //useFrame para sincronizar estado de Jefe y desvanecimiento de residuos dorados
+    useFrame(() => {
+        if (gameState !== 'playing') return
+        const now = performance.now()
+
+        // 1. Spawning del Jefe Final si se activa
+        if (bossActive && !targets.some(t => t.type === 'final_boss') && !hasBeatenBoss) {
+            setTargets(prev => [
+                ...prev.filter(x => x.type !== 'final_boss'),
+                {
+                    id: 9999,
+                    position: [0, 1.2, -2.5], // Posición central frente a la cámara por defecto
+                    type: 'final_boss',
+                    radius: 0.55
+                }
+            ])
+        }
+
+        // 2. Despawning del Jefe si muere o ya no está activo
+        if (!bossActive && targets.some(t => t.type === 'final_boss')) {
+            setTargets(prev => prev.filter(t => t.type !== 'final_boss'))
+        }
+
+        // 3. Despawning de residuos dorados expirados (8 segundos)
+        const expiredGoldenIds: number[] = []
+        targets.forEach(t => {
+            if (t.isGolden && now - (t.spawnTime || 0) > 8000) {
+                expiredGoldenIds.push(t.id)
+            }
+        })
+
+        if (expiredGoldenIds.length > 0) {
+            setTargets(prev => {
+                const remaining = prev.filter(t => !expiredGoldenIds.includes(t.id))
+                const levelConfig = LEVELS[level - 1]
+                const max = levelConfig ? levelConfig.maxTargets : 8
+                const pctRec = levelConfig ? levelConfig.pctRecyclable : 0.90
+                
+                const needed = max - remaining.length
+                const replenished: TargetData[] = []
+                for (let k = 0; k < needed; k++) {
+                    replenished.push({
+                        id: Date.now() + Math.random() + k,
+                        position: [
+                            (Math.random() - 0.5) * 7,
+                            0.5 + Math.random() * 2,
+                            (Math.random() - 0.5) * 7
+                        ] as [number, number, number],
+                        type: getRandomWasteTypeForLevel(pctRec),
+                        radius: 0.18,
+                        isGolden: false
+                    })
+                }
+                return [...remaining, ...replenished]
+            })
+        }
+    })
 
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
@@ -65,7 +134,9 @@ function DemoSceneInner({ targets, setTargets, setLabels }: {
             targets.forEach(t => {
                 const tPos = new THREE.Vector3(...t.position)
                 const distToRay = raycaster.current.ray.distanceToPoint(tPos)
-                if (distToRay < t.radius + 0.22 && raycaster.current.ray.origin.distanceTo(tPos) < minDist) {
+                // Aumentar margen de impacto si es el jefe
+                const colSize = t.type === 'final_boss' ? t.radius + 0.3 : t.radius + 0.22
+                if (distToRay < colSize && raycaster.current.ray.origin.distanceTo(tPos) < minDist) {
                     hitTarget = t
                     minDist = raycaster.current.ray.origin.distanceTo(tPos)
                 }
@@ -74,47 +145,68 @@ function DemoSceneInner({ targets, setTargets, setLabels }: {
             if (hitTarget) {
                 const t = hitTarget as TargetData
                 
-                // Disparar lógica de recolección en el Store
-                if (HAZARDOUS.includes(t.type)) {
-                    hitHazardous(t.type)
-                    SoundSystem.play('bomb') // Fallo/Alerta
-                    addLabel('Residuo peligroso', '#f87171')
+                if (t.type === 'final_boss') {
+                    // Impactar jefe final
+                    hitBoss(1)
+                    SoundSystem.play('hit')
+                    const nextHp = bossHp - 1
+                    addLabel(`¡IMPACTO! HP: ${nextHp}/10`, "#c084fc")
                 } else {
-                    recycleItem(t.type)
-                    SoundSystem.play('hit') // Éxito ecológico
-                    addLabel('+100 Reciclado', '#4ade80')
-                }
-
-                // Filtrar el residuo y reponer inmediatamente uno nuevo
-                setTargets(prev => {
-                    const remaining = prev.filter(x => x.id !== t.id)
-                    const levelConfig = LEVELS[level - 1]
-                    const max = levelConfig ? levelConfig.maxTargets : 8
-                    const pctRec = levelConfig ? levelConfig.pctRecyclable : 0.90
-                    
-                    const needed = max - remaining.length
-                    const replenished: TargetData[] = []
-                    
-                    for (let k = 0; k < needed; k++) {
-                        replenished.push({
-                            id: Date.now() + Math.random() + k,
-                            position: [
-                                (Math.random() - 0.5) * 7,
-                                0.5 + Math.random() * 2,
-                                (Math.random() - 0.5) * 7
-                            ] as [number, number, number],
-                            type: getRandomWasteTypeForLevel(pctRec),
-                            radius: 0.18
-                        })
+                    // Impactar residuo común
+                    if (HAZARDOUS.includes(t.type)) {
+                        hitHazardous(t.type)
+                        SoundSystem.play('bomb') // Alerta de error
+                        addLabel('Residuo peligroso', '#f87171')
+                    } else {
+                        recycleItem(t.type, t.isGolden)
+                        SoundSystem.play('hit') // Éxito ecológico
+                        
+                        const comboMult = useGameStore.getState().comboMultiplier
+                        const text = t.isGolden 
+                            ? `¡DORADO! +${500 * comboMult}` 
+                            : (comboMult > 1 ? `Combo x${comboMult}! +${100 * comboMult}` : "+100 Reciclado")
+                        const color = t.isGolden ? "#fbbf24" : (comboMult > 1 ? "#38bdf8" : "#4ade80")
+                        
+                        addLabel(text, color)
                     }
-                    return [...remaining, ...replenished]
-                })
+
+                    // Filtrar el residuo y reponer inmediatamente uno nuevo
+                    setTargets(prev => {
+                        const remaining = prev.filter(x => x.id !== t.id)
+                        const levelConfig = LEVELS[level - 1]
+                        const max = levelConfig ? levelConfig.maxTargets : 8
+                        const pctRec = levelConfig ? levelConfig.pctRecyclable : 0.90
+                        
+                        const needed = max - remaining.length
+                        const replenished: TargetData[] = []
+                        
+                        for (let k = 0; k < needed; k++) {
+                            const type = getRandomWasteTypeForLevel(pctRec)
+                            const isRecyclable = RECYCLABLES.includes(type)
+                            const isGolden = isRecyclable && Math.random() < 0.10
+
+                            replenished.push({
+                                id: Date.now() + Math.random() + k,
+                                position: [
+                                    (Math.random() - 0.5) * 7,
+                                    0.5 + Math.random() * 2,
+                                    (Math.random() - 0.5) * 7
+                                ] as [number, number, number],
+                                type: type,
+                                radius: 0.18,
+                                isGolden: isGolden,
+                                spawnTime: isGolden ? performance.now() : undefined
+                            })
+                        }
+                        return [...remaining, ...replenished]
+                    })
+                }
             }
         }
 
         gl.domElement.addEventListener('click', handleClick)
         return () => gl.domElement.removeEventListener('click', handleClick)
-    }, [camera, gl, targets, gameState, level, recycleItem, hitHazardous])
+    }, [camera, gl, targets, gameState, level, recycleItem, hitHazardous, bossHp, hitBoss])
 
     return (
         <>
@@ -132,7 +224,7 @@ function DemoSceneInner({ targets, setTargets, setLabels }: {
             <gridHelper args={[20, 20, '#1a3a2a', '#1a3a2a']} position={[0, -0.49, 0]} />
 
             {targets.map(t => (
-                <Crystal key={t.id} position={t.position} type={t.type} />
+                <Crystal key={t.id} position={t.position} type={t.type} isGolden={t.isGolden} />
             ))}
 
             <OrbitControls
@@ -159,22 +251,30 @@ export function DemoScene() {
             const max = levelConfig ? levelConfig.maxTargets : 8
             const pctRec = levelConfig ? levelConfig.pctRecyclable : 0.90
 
-            const newTargets = Array.from({ length: max }).map((_, i) => ({
-                id: i,
-                position: [
-                    (Math.random() - 0.5) * 7,
-                    0.5 + Math.random() * 2,
-                    (Math.random() - 0.5) * 7
-                ] as [number, number, number],
-                type: getRandomWasteTypeForLevel(pctRec),
-                radius: 0.18
-            }))
+            const newTargets = Array.from({ length: max }).map((_, i) => {
+                const type = getRandomWasteTypeForLevel(pctRec)
+                const isRecyclable = RECYCLABLES.includes(type)
+                const isGolden = isRecyclable && Math.random() < 0.10
+
+                return {
+                    id: i,
+                    position: [
+                        (Math.random() - 0.5) * 7,
+                        0.5 + Math.random() * 2,
+                        (Math.random() - 0.5) * 7
+                    ] as [number, number, number],
+                    type: type,
+                    radius: 0.18,
+                    isGolden: isGolden,
+                    spawnTime: isGolden ? performance.now() : undefined
+                }
+            })
             setTargets(newTargets)
             setLabels([])
         }
     }, [gameState, level])
 
-    if (gameState === 'menu' || gameState === 'level_intro') {
+    if (gameState === 'menu' || gameState === 'level_intro' || gameState === 'cinematic') {
         return (
             <div className="demo-overlay">
                 <div className="demo-banner glass">

@@ -18,8 +18,10 @@ interface BulletData {
 interface TargetData {
     id: number
     position: [number, number, number]
-    type: string // Representa el WasteType
+    type: string
     radius: number
+    isGolden?: boolean
+    spawnTime?: number
 }
 
 interface FloatingText {
@@ -41,7 +43,16 @@ const getRandomWasteTypeForLevel = (pctRecyclable: number): string => {
 
 export function Scene() {
     const { camera } = useThree()
-    const { level, recycleItem, hitHazardous, gameState } = useGameStore()
+    const { 
+        level, 
+        recycleItem, 
+        hitHazardous, 
+        gameState, 
+        bossActive, 
+        bossHp, 
+        hitBoss, 
+        hasBeatenBoss 
+    } = useGameStore()
 
     // Referencias para la física
     const bulletsRef = useRef<BulletData[]>([])
@@ -68,6 +79,10 @@ export function Scene() {
                 const phi = Math.acos((Math.random() * 2) - 1)
                 const distance = 2.5 + Math.random() * 2.5 // Entre 2.5m y 5m
                 
+                const type = getRandomWasteTypeForLevel(pctRec)
+                const isRecyclable = RECYCLABLES.includes(type)
+                const isGolden = isRecyclable && Math.random() < 0.10 // 10% chance
+                
                 return {
                     id: i,
                     position: [
@@ -75,8 +90,10 @@ export function Scene() {
                         Math.max(0.2, 1.2 + 1.2 * Math.cos(phi)), // Altura jugable cómoda
                         distance * Math.sin(phi) * Math.sin(theta)
                     ] as [number, number, number],
-                    type: getRandomWasteTypeForLevel(pctRec),
-                    radius: 0.18
+                    type: type,
+                    radius: 0.18,
+                    isGolden: isGolden,
+                    spawnTime: isGolden ? performance.now() : undefined
                 }
             })
             setTargets(newTargets)
@@ -128,6 +145,69 @@ export function Scene() {
         const now = performance.now()
         const bulletSpeed = 16 // m/s (velocidad del haz de escaneo)
 
+        // --- GESTIÓN DEL JEFE FINAL ---
+        // Si el jefe final se activa y no está en targets, agregarlo
+        if (bossActive && !targets.some(t => t.type === 'final_boss') && !hasBeatenBoss) {
+            setTargets(prev => [
+                ...prev.filter(x => x.type !== 'final_boss'),
+                {
+                    id: 9999,
+                    position: [0, 1.3, -3], // Central frente al usuario en AR
+                    type: 'final_boss',
+                    radius: 0.55
+                }
+            ])
+        }
+
+        // Si el jefe final ya no está activo pero sigue en targets (por ejemplo tras morir), removerlo
+        if (!bossActive && targets.some(t => t.type === 'final_boss')) {
+            setTargets(prev => prev.filter(t => t.type !== 'final_boss'))
+        }
+
+        // --- GESTIÓN DE RESIDUOS DORADOS EXPIRADOS ---
+        // Desvanecer residuos dorados con más de 8 segundos sin escanear
+        const expiredGoldenIds: number[] = []
+        targets.forEach(t => {
+            if (t.isGolden && now - (t.spawnTime || 0) > 8000) {
+                expiredGoldenIds.push(t.id)
+            }
+        })
+
+        if (expiredGoldenIds.length > 0) {
+            setTargets(prev => {
+                const remainingTargets = prev.filter(t => !expiredGoldenIds.includes(t.id))
+                
+                const levelConfig = LEVELS[level - 1]
+                const max = levelConfig ? levelConfig.maxTargets : 8
+                const pctRec = levelConfig ? levelConfig.pctRecyclable : 0.90
+                
+                // Reponer con residuos normales
+                const needed = max - remainingTargets.length
+                const replenished: TargetData[] = []
+
+                for (let k = 0; k < needed; k++) {
+                    const theta = Math.random() * Math.PI * 2
+                    const phi = Math.acos((Math.random() * 2) - 1)
+                    const distance = 2.5 + Math.random() * 2.5
+
+                    replenished.push({
+                        id: Date.now() + Math.random() + k,
+                        position: [
+                            distance * Math.sin(phi) * Math.cos(theta),
+                            Math.max(0.2, 1.2 + 1.2 * Math.cos(phi)),
+                            distance * Math.sin(phi) * Math.sin(theta)
+                        ] as [number, number, number],
+                        type: getRandomWasteTypeForLevel(pctRec),
+                        radius: 0.18,
+                        isGolden: false // reemplazado por normal
+                    })
+                }
+
+                return [...remainingTargets, ...replenished]
+            })
+        }
+
+        // --- FÍSICA DE BALAS Y COLISIONES ---
         // 1. Mover los pulsos de escaneo
         bulletsRef.current.forEach(b => {
             b.position.add(b.direction.clone().multiplyScalar(bulletSpeed * delta))
@@ -154,23 +234,40 @@ export function Scene() {
                 // Margen de colisión
                 if (dist < (t.radius + 0.12)) {
                     bulletsToRemove.push(b.id)
-                    targetsToRemove.push(t.id)
 
-                    const isHazardous = HAZARDOUS.includes(t.type)
-                    if (isHazardous) {
-                        hitHazardous(t.type)
-                        SoundSystem.play('bomb') // Alerta de error
-                        addFloatingText(t.position, "Residuo peligroso", "#f87171")
+                    if (t.type === 'final_boss') {
+                        // Colisión con el Jefe
+                        hitBoss(1)
+                        SoundSystem.play('hit')
+                        const nextHp = bossHp - 1
+                        addFloatingText(t.position, `¡IMPACTO! HP: ${nextHp}/10`, "#c084fc")
                     } else {
-                        recycleItem(t.type)
-                        SoundSystem.play('hit') // Sonido ecológico/amigable
-                        addFloatingText(t.position, "+100 Reciclado", "#4ade80")
+                        // Colisión con residuo común
+                        targetsToRemove.push(t.id)
+                        const isHazardous = HAZARDOUS.includes(t.type)
+                        if (isHazardous) {
+                            hitHazardous(t.type)
+                            SoundSystem.play('bomb') // Alerta de error
+                            addFloatingText(t.position, "Residuo peligroso", "#f87171")
+                        } else {
+                            recycleItem(t.type, t.isGolden)
+                            SoundSystem.play('hit') // Sonido ecológico/amigable
+
+                            // Calcular el combo actual para el texto flotante
+                            const currentMultiplier = useGameStore.getState().comboMultiplier
+                            const text = t.isGolden
+                                ? `¡DORADO! +${500 * currentMultiplier}`
+                                : (currentMultiplier > 1 ? `Combo x${currentMultiplier}! +${100 * currentMultiplier}` : "+100 Reciclado")
+                            const color = t.isGolden ? "#fbbf24" : (currentMultiplier > 1 ? "#38bdf8" : "#4ade80")
+
+                            addFloatingText(t.position, text, color)
+                        }
                     }
                 }
             })
         })
 
-        // 3. Procesar eliminación y REPOSICIÓN CONTINUA de residuos
+        // 3. Procesar eliminación y REPOSICIÓN CONTINUA de residuos comunes
         if (targetsToRemove.length > 0) {
             setTargets(prev => {
                 const remainingTargets = prev.filter(t => !targetsToRemove.includes(t.id))
@@ -188,6 +285,10 @@ export function Scene() {
                     const phi = Math.acos((Math.random() * 2) - 1)
                     const distance = 2.5 + Math.random() * 2.5
 
+                    const type = getRandomWasteTypeForLevel(pctRec)
+                    const isRecyclable = RECYCLABLES.includes(type)
+                    const isGolden = isRecyclable && Math.random() < 0.10 // 10% chance
+
                     replenished.push({
                         id: Date.now() + Math.random() + k,
                         position: [
@@ -195,8 +296,10 @@ export function Scene() {
                             Math.max(0.2, 1.2 + 1.2 * Math.cos(phi)),
                             distance * Math.sin(phi) * Math.sin(theta)
                         ] as [number, number, number],
-                        type: getRandomWasteTypeForLevel(pctRec),
-                        radius: 0.18
+                        type: type,
+                        radius: 0.18,
+                        isGolden: isGolden,
+                        spawnTime: isGolden ? performance.now() : undefined
                     })
                 }
 
@@ -219,7 +322,7 @@ export function Scene() {
 
             {/* Residuos activos */}
             {targets.map(t => (
-                <Crystal key={t.id} position={t.position} type={t.type} />
+                <Crystal key={t.id} position={t.position} type={t.type} isGolden={t.isGolden} />
             ))}
 
             {/* Haz de escaneo */}
