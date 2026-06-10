@@ -3,6 +3,7 @@ import { useGameStore, ACHIEVEMENTS } from '../store/gameStore'
 
 interface HUDProps {
     onStartAR?: () => void
+    isDemoMode?: boolean
 }
 
 const EDUCATIONAL_CARDS = [
@@ -13,7 +14,7 @@ const EDUCATIONAL_CARDS = [
     "Cuidar el medio ambiente es responsabilidad de todos."
 ]
 
-export function HUD({ onStartAR }: HUDProps) {
+export function HUD({ onStartAR, isDemoMode = false }: HUDProps) {
     const {
         score,
         timeLeft,
@@ -124,18 +125,27 @@ export function HUD({ onStartAR }: HUDProps) {
                         <h1>HUANCAYO LIMPIO AR</h1>
                     </div>
                     <p className="subtitle">
-                        Utiliza realidad aumentada para limpiar virtualmente la ciudad y aprender sobre el reciclaje.
+                        {isDemoMode
+                            ? 'Modo demostración en escritorio. Usa el mouse para rotar y haz clic para capturar residuos.'
+                            : 'Utiliza realidad aumentada para limpiar virtualmente la ciudad y aprender sobre el reciclaje.'}
                     </p>
+                    {isDemoMode && (
+                        <div className="demo-mode-notice">
+                            🖥️ <strong>Modo Demo activo</strong> — Sin cámara AR. Arrastra para rotar, clic para capturar.
+                        </div>
+                    )}
                     <div className="instructions">
                         <h3>Misión del Agente Ambiental:</h3>
                         <ul>
                             <li>🟢 Recolecta botellas, latas, papeles y cartones (+100 Impacto).</li>
                             <li>🔴 Evita tocar pilas, baterías y químicos tóxicos (-500 Impacto).</li>
-                            <li>🧭 Sigue el Detector Ambiental verde para encontrar los residuos.</li>
+                            {isDemoMode
+                                ? <li>🖱️ Arrastra para rotar la vista · Clic para capturar.</li>
+                                : <li>🧭 Sigue el Detector Ambiental verde para encontrar los residuos.</li>}
                         </ul>
                     </div>
                     <button className="btn-primary" onClick={handlePlayClick}>
-                        Comenzar misión 🚀
+                        {isDemoMode ? '▶️ Iniciar Demostración' : 'Comenzar misión 🚀'}
                     </button>
                 </div>
             </div>
