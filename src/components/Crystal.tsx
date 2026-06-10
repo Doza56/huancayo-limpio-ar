@@ -12,16 +12,17 @@ export function Crystal({ position, type }: CrystalProps) {
 
     useFrame((state, delta) => {
         if (groupRef.current) {
-            // Rotación elegante sobre el eje Y con ligera inclinación
-            groupRef.current.rotation.y += delta * 0.8
-            groupRef.current.rotation.x = 0.2 + Math.sin(state.clock.elapsedTime * 0.5) * 0.1
+            // Rotación suave e inclinada en múltiples ejes para dinamismo natural
+            groupRef.current.rotation.y += delta * 0.7
+            groupRef.current.rotation.z += delta * 0.15
+            groupRef.current.rotation.x = 0.1 + Math.sin(state.clock.elapsedTime * 0.4) * 0.1
 
-            // Animación de flotado (Bobbing)
-            groupRef.current.position.y = position[1] + Math.sin(state.clock.elapsedTime * 1.5 + position[0]) * 0.08
+            // Animación de flotado vertical (Bobbing) suave
+            groupRef.current.position.y = position[1] + Math.sin(state.clock.elapsedTime * 1.3 + position[0]) * 0.07
         }
     })
 
-    // Renderizado condicional del modelo 3D según el tipo de residuo
+    // Construcción de los modelos 3D procedurales optimizados
     const renderModel = () => {
         switch (type) {
             // --- RESIDUOS RECICLABLES ---
@@ -29,51 +30,67 @@ export function Crystal({ position, type }: CrystalProps) {
                 return (
                     <group>
                         {/* Cuerpo de la botella */}
-                        <mesh position={[0, 0, 0]}>
-                            <cylinderGeometry args={[0.07, 0.07, 0.22, 12]} />
-                            <meshStandardMaterial color="#a5f3fc" transparent opacity={0.65} roughness={0.1} metalness={0.1} />
+                        <mesh position={[0, -0.02, 0]}>
+                            <cylinderGeometry args={[0.06, 0.06, 0.18, 12]} />
+                            <meshStandardMaterial color="#a5f3fc" transparent opacity={0.6} roughness={0.1} metalness={0.1} />
+                        </mesh>
+                        {/* Hombro de la botella */}
+                        <mesh position={[0, 0.08, 0]}>
+                            <cylinderGeometry args={[0.03, 0.06, 0.04, 12]} />
+                            <meshStandardMaterial color="#a5f3fc" transparent opacity={0.6} roughness={0.1} />
                         </mesh>
                         {/* Cuello de la botella */}
-                        <mesh position={[0, 0.13, 0]}>
-                            <cylinderGeometry args={[0.035, 0.035, 0.04, 10]} />
-                            <meshStandardMaterial color="#a5f3fc" transparent opacity={0.65} roughness={0.1} />
+                        <mesh position={[0, 0.115, 0]}>
+                            <cylinderGeometry args={[0.03, 0.03, 0.03, 10]} />
+                            <meshStandardMaterial color="#a5f3fc" transparent opacity={0.6} roughness={0.1} />
                         </mesh>
                         {/* Tapa azul */}
-                        <mesh position={[0, 0.155, 0]}>
-                            <cylinderGeometry args={[0.04, 0.04, 0.02, 10]} />
-                            <meshStandardMaterial color="#0284c7" roughness={0.5} />
+                        <mesh position={[0, 0.135, 0]}>
+                            <cylinderGeometry args={[0.035, 0.035, 0.015, 10]} />
+                            <meshStandardMaterial color="#0284c7" roughness={0.4} />
                         </mesh>
                     </group>
                 )
             case 'aluminum_can':
                 return (
                     <group>
-                        {/* Cuerpo de la lata */}
+                        {/* Cuerpo metálico plateado */}
                         <mesh position={[0, 0, 0]}>
-                            <cylinderGeometry args={[0.07, 0.07, 0.2, 12]} />
-                            <meshStandardMaterial color="#cbd5e1" metalness={0.95} roughness={0.1} />
+                            <cylinderGeometry args={[0.065, 0.065, 0.16, 12]} />
+                            <meshStandardMaterial color="#cbd5e1" metalness={0.9} roughness={0.2} />
                         </mesh>
-                        {/* Bordes metálicos */}
-                        <mesh position={[0, 0.1, 0]} rotation={[Math.PI / 2, 0, 0]}>
-                            <torusGeometry args={[0.065, 0.006, 8, 16]} />
-                            <meshStandardMaterial color="#94a3b8" metalness={0.9} roughness={0.1} />
+                        {/* Borde metálico superior */}
+                        <mesh position={[0, 0.08, 0]} rotation={[Math.PI / 2, 0, 0]}>
+                            <torusGeometry args={[0.06, 0.007, 8, 16]} />
+                            <meshStandardMaterial color="#94a3b8" metalness={0.8} roughness={0.2} />
                         </mesh>
-                        <mesh position={[0, -0.1, 0]} rotation={[Math.PI / 2, 0, 0]}>
-                            <torusGeometry args={[0.065, 0.006, 8, 16]} />
-                            <meshStandardMaterial color="#94a3b8" metalness={0.9} roughness={0.1} />
+                        {/* Borde metálico inferior */}
+                        <mesh position={[0, -0.08, 0]} rotation={[Math.PI / 2, 0, 0]}>
+                            <torusGeometry args={[0.06, 0.007, 8, 16]} />
+                            <meshStandardMaterial color="#94a3b8" metalness={0.8} roughness={0.2} />
+                        </mesh>
+                        {/* Anilla abre fácil en el tope */}
+                        <mesh position={[0.015, 0.082, 0]} rotation={[0, 0, 0]}>
+                            <boxGeometry args={[0.02, 0.002, 0.035]} />
+                            <meshStandardMaterial color="#94a3b8" metalness={0.9} roughness={0.2} />
                         </mesh>
                     </group>
                 )
             case 'paper':
                 return (
                     <group>
-                        {/* Hojas de papel arrugadas/superpuestas */}
-                        <mesh position={[0, 0, 0]} rotation={[0.4, 0.2, 0.6]}>
-                            <boxGeometry args={[0.16, 0.005, 0.22]} />
+                        {/* Dos hojas de papel dobladas e inclinadas */}
+                        <mesh position={[0, 0, 0]} rotation={[0.3, 0.2, 0.5]}>
+                            <boxGeometry args={[0.13, 0.002, 0.18]} />
                             <meshStandardMaterial color="#ffffff" roughness={0.9} />
                         </mesh>
-                        <mesh position={[0.01, 0.01, 0.01]} rotation={[-0.3, 0.5, 0.2]}>
-                            <boxGeometry args={[0.15, 0.005, 0.2]} />
+                        {/* Esquina doblada para simular papel usado */}
+                        <mesh position={[0.045, 0.002, 0.07]} rotation={[0.3, 0.2, -0.6]}>
+                            <boxGeometry args={[0.04, 0.0025, 0.04]} />
+                            <meshStandardMaterial color="#e2e8f0" roughness={0.95} />
+                        </mesh>
+                        <mesh position={[-0.01, -0.005, 0.01]} rotation={[-0.2, 0.4, 0.1]}>
+                            <boxGeometry args={[0.12, 0.0018, 0.17]} />
                             <meshStandardMaterial color="#f8fafc" roughness={0.9} />
                         </mesh>
                     </group>
@@ -81,35 +98,50 @@ export function Crystal({ position, type }: CrystalProps) {
             case 'cardboard':
                 return (
                     <group>
-                        {/* Caja de cartón cerrada */}
+                        {/* Caja de cartón marrón principal */}
                         <mesh position={[0, 0, 0]}>
-                            <boxGeometry args={[0.18, 0.16, 0.18]} />
-                            <meshStandardMaterial color="#b45309" roughness={0.85} />
+                            <boxGeometry args={[0.18, 0.15, 0.18]} />
+                            <meshStandardMaterial color="#d97706" roughness={0.9} />
                         </mesh>
-                        {/* Cinta de embalaje */}
-                        <mesh position={[0, 0.081, 0]}>
-                            <boxGeometry args={[0.03, 0.002, 0.182]} />
-                            <meshStandardMaterial color="#78350f" roughness={0.4} />
+                        {/* Solapas superiores parcialmente abiertas (lado A) */}
+                        <mesh position={[-0.08, 0.085, 0]} rotation={[0, 0, 0.2]}>
+                            <boxGeometry args={[0.05, 0.002, 0.18]} />
+                            <meshStandardMaterial color="#b45309" roughness={0.9} />
+                        </mesh>
+                        {/* Solapas superiores parcialmente abiertas (lado B) */}
+                        <mesh position={[0.08, 0.085, 0]} rotation={[0, 0, -0.2]}>
+                            <boxGeometry args={[0.05, 0.002, 0.18]} />
+                            <meshStandardMaterial color="#b45309" roughness={0.9} />
+                        </mesh>
+                        {/* Cinta de embalaje adhesiva */}
+                        <mesh position={[0, 0.001, 0.091]}>
+                            <boxGeometry args={[0.03, 0.14, 0.002]} />
+                            <meshStandardMaterial color="#78350f" roughness={0.5} />
                         </mesh>
                     </group>
                 )
             case 'container':
                 return (
                     <group>
-                        {/* Caja de cartón de leche/jugo (Tetra Pak) */}
-                        <mesh position={[0, -0.02, 0]}>
-                            <boxGeometry args={[0.11, 0.18, 0.11]} />
+                        {/* Envase de cartón de jugo/leche (Tetra Pak) */}
+                        <mesh position={[0, -0.03, 0]}>
+                            <boxGeometry args={[0.11, 0.16, 0.11]} />
                             <meshStandardMaterial color="#f1f5f9" roughness={0.4} />
                         </mesh>
-                        {/* Techo triangular */}
-                        <mesh position={[0, 0.08, 0]} rotation={[0, Math.PI / 4, 0]}>
-                            <coneGeometry args={[0.085, 0.05, 4]} />
+                        {/* Franjas decorativas reciclables */}
+                        <mesh position={[0, -0.03, 0.056]}>
+                            <boxGeometry args={[0.08, 0.04, 0.002]} />
+                            <meshStandardMaterial color="#22c55e" roughness={0.5} />
+                        </mesh>
+                        {/* Tapa cónica inclinada superior */}
+                        <mesh position={[0, 0.07, 0]} rotation={[0, Math.PI / 4, 0]}>
+                            <coneGeometry args={[0.085, 0.04, 4]} />
                             <meshStandardMaterial color="#e2e8f0" roughness={0.4} />
                         </mesh>
-                        {/* Detalle tapa del envase */}
-                        <mesh position={[0.03, 0.09, 0.02]}>
+                        {/* Pico/Rosca vertedora */}
+                        <mesh position={[0.02, 0.085, 0.02]}>
                             <cylinderGeometry args={[0.015, 0.015, 0.01, 8]} />
-                            <meshStandardMaterial color="#ea580c" roughness={0.5} />
+                            <meshStandardMaterial color="#10b981" roughness={0.5} />
                         </mesh>
                     </group>
                 )
@@ -118,97 +150,108 @@ export function Crystal({ position, type }: CrystalProps) {
             case 'used_battery':
                 return (
                     <group>
-                        {/* Cuerpo de la pila AA */}
+                        {/* Pila: Cuerpo negro principal */}
                         <mesh position={[0, 0, 0]}>
                             <cylinderGeometry args={[0.045, 0.045, 0.15, 12]} />
-                            <meshStandardMaterial color="#1e293b" metalness={0.6} roughness={0.3} />
+                            <meshStandardMaterial color="#18181b" metalness={0.5} roughness={0.3} />
                         </mesh>
-                        {/* Banda de advertencia amarilla de la pila */}
+                        {/* Anillo de advertencia amarillo cobre */}
                         <mesh position={[0, 0.02, 0]}>
-                            <cylinderGeometry args={[0.046, 0.046, 0.05, 12]} />
-                            <meshStandardMaterial color="#eab308" metalness={0.5} roughness={0.3} />
+                            <cylinderGeometry args={[0.046, 0.046, 0.06, 12]} />
+                            <meshStandardMaterial color="#fbbf24" metalness={0.4} roughness={0.3} />
                         </mesh>
-                        {/* Terminal positivo (pin metálico) */}
+                        {/* Terminal superior cobre */}
                         <mesh position={[0, 0.08, 0]}>
-                            <cylinderGeometry args={[0.015, 0.015, 0.015, 10]} />
-                            <meshStandardMaterial color="#cbd5e1" metalness={0.9} roughness={0.1} />
+                            <cylinderGeometry args={[0.015, 0.015, 0.015, 8]} />
+                            <meshStandardMaterial color="#ea580c" metalness={0.9} roughness={0.1} />
                         </mesh>
-                        {/* Brillo rojo de advertencia de peligro */}
-                        <mesh position={[0, 0, 0]}>
-                            <cylinderGeometry args={[0.048, 0.048, 0.152, 12]} />
-                            <meshBasicMaterial color="#ef4444" transparent opacity={0.15} wireframe />
+                        {/* Base metálica inferior */}
+                        <mesh position={[0, -0.08, 0]}>
+                            <cylinderGeometry args={[0.045, 0.045, 0.01, 12]} />
+                            <meshStandardMaterial color="#64748b" metalness={0.8} />
                         </mesh>
                     </group>
                 )
             case 'battery':
                 return (
                     <group>
-                        {/* Batería rectangular (ej. batería de auto o 9V) */}
+                        {/* Batería rectangular negra */}
                         <mesh position={[0, 0, 0]}>
-                            <boxGeometry args={[0.15, 0.13, 0.09]} />
-                            <meshStandardMaterial color="#dc2626" roughness={0.5} />
+                            <boxGeometry args={[0.15, 0.12, 0.09]} />
+                            <meshStandardMaterial color="#09090b" roughness={0.4} />
                         </mesh>
-                        {/* Bornes/Terminales */}
-                        <mesh position={[-0.04, 0.075, 0]}>
-                            <cylinderGeometry args={[0.012, 0.012, 0.02, 8]} />
-                            <meshStandardMaterial color="#64748b" metalness={0.8} />
-                        </mesh>
-                        <mesh position={[0.04, 0.075, 0]}>
-                            <cylinderGeometry args={[0.012, 0.012, 0.02, 8]} />
-                            <meshStandardMaterial color="#334155" metalness={0.8} />
-                        </mesh>
-                        {/* Símbolo de advertencia o franja */}
+                        {/* Franja de peligro amarilla */}
                         <mesh position={[0, 0, 0.046]}>
-                            <boxGeometry args={[0.08, 0.02, 0.002]} />
-                            <meshStandardMaterial color="#facc15" roughness={0.5} />
+                            <boxGeometry args={[0.12, 0.02, 0.002]} />
+                            <meshStandardMaterial color="#eab308" roughness={0.5} />
+                        </mesh>
+                        {/* Bornes visibles */}
+                        <mesh position={[-0.04, 0.07, 0]}>
+                            <cylinderGeometry args={[0.012, 0.012, 0.02, 8]} />
+                            <meshStandardMaterial color="#ef4444" metalness={0.8} /> {/* Positivo Rojo */}
+                        </mesh>
+                        <mesh position={[0.04, 0.07, 0]}>
+                            <cylinderGeometry args={[0.012, 0.012, 0.02, 8]} />
+                            <meshStandardMaterial color="#cbd5e1" metalness={0.8} /> {/* Negativo Gris */}
                         </mesh>
                     </group>
                 )
             case 'toxic_waste':
                 return (
                     <group>
-                        {/* Barril/Tambor de residuos químicos */}
+                        {/* Bidón rojo de residuos peligrosos */}
                         <mesh position={[0, 0, 0]}>
                             <cylinderGeometry args={[0.09, 0.09, 0.22, 12]} />
-                            <meshStandardMaterial color="#15803d" roughness={0.4} metalness={0.2} />
+                            <meshStandardMaterial color="#dc2626" roughness={0.4} metalness={0.2} />
                         </mesh>
-                        {/* Anillos del barril */}
+                        {/* Anillos del bidón en negro */}
                         <mesh position={[0, 0.05, 0]} rotation={[Math.PI / 2, 0, 0]}>
-                            <torusGeometry args={[0.092, 0.008, 8, 16]} />
-                            <meshStandardMaterial color="#eab308" roughness={0.4} />
+                            <torusGeometry args={[0.091, 0.008, 8, 16]} />
+                            <meshStandardMaterial color="#111111" roughness={0.6} />
                         </mesh>
                         <mesh position={[0, -0.05, 0]} rotation={[Math.PI / 2, 0, 0]}>
-                            <torusGeometry args={[0.092, 0.008, 8, 16]} />
-                            <meshStandardMaterial color="#eab308" roughness={0.4} />
+                            <torusGeometry args={[0.091, 0.008, 8, 16]} />
+                            <meshStandardMaterial color="#111111" roughness={0.6} />
                         </mesh>
-                        {/* Símbolo de tóxico (emisor de luz verde) */}
+                        {/* Símbolo de advertencia ambiental (rombo amarillo) */}
                         <mesh position={[0, 0, 0.091]} rotation={[0, 0, Math.PI / 4]}>
-                            <boxGeometry args={[0.04, 0.04, 0.002]} />
-                            <meshStandardMaterial color="#ef4444" emissive="#ef4444" emissiveIntensity={0.8} />
+                            <boxGeometry args={[0.045, 0.045, 0.002]} />
+                            <meshStandardMaterial color="#fbbf24" emissive="#fbbf24" emissiveIntensity={0.6} />
+                        </mesh>
+                        {/* Detalle interno negro en el rombo */}
+                        <mesh position={[0, 0, 0.093]} rotation={[0, 0, Math.PI / 4]}>
+                            <boxGeometry args={[0.025, 0.025, 0.002]} />
+                            <meshStandardMaterial color="#000000" />
                         </mesh>
                     </group>
                 )
             case 'chemical':
                 return (
                     <group>
-                        {/* Frasco químico o matraz */}
-                        <mesh position={[0, -0.04, 0]}>
-                            <coneGeometry args={[0.1, 0.13, 10]} />
-                            <meshStandardMaterial color="#f43f5e" emissive="#be123c" emissiveIntensity={0.4} transparent opacity={0.75} roughness={0.1} />
+                        {/* Frasco químico naranja de laboratorio */}
+                        <mesh position={[0, -0.03, 0]}>
+                            <coneGeometry args={[0.095, 0.12, 10]} />
+                            <meshStandardMaterial color="#ea580c" emissive="#7c2d12" emissiveIntensity={0.3} transparent opacity={0.8} roughness={0.1} />
                         </mesh>
+                        {/* Cuello del matraz */}
                         <mesh position={[0, 0.05, 0]}>
-                            <cylinderGeometry args={[0.025, 0.025, 0.07, 10]} />
-                            <meshStandardMaterial color="#f43f5e" emissive="#be123c" emissiveIntensity={0.4} transparent opacity={0.75} roughness={0.1} />
+                            <cylinderGeometry args={[0.024, 0.024, 0.05, 10]} />
+                            <meshStandardMaterial color="#ea580c" transparent opacity={0.8} roughness={0.1} />
                         </mesh>
-                        {/* Tapón */}
-                        <mesh position={[0, 0.088, 0]}>
-                            <cylinderGeometry args={[0.03, 0.03, 0.015, 8]} />
-                            <meshStandardMaterial color="#334155" roughness={0.6} />
+                        {/* Tapón negro */}
+                        <mesh position={[0, 0.078, 0]}>
+                            <cylinderGeometry args={[0.028, 0.028, 0.015, 8]} />
+                            <meshStandardMaterial color="#18181b" roughness={0.7} />
+                        </mesh>
+                        {/* Líquido burbujeante interno */}
+                        <mesh position={[0, -0.04, 0]}>
+                            <sphereGeometry args={[0.06, 8, 8]} />
+                            <meshStandardMaterial color="#fbbf24" emissive="#fbbf24" emissiveIntensity={0.5} transparent opacity={0.9} />
                         </mesh>
                     </group>
                 )
             default:
-                // Fallback por si acaso
+                // Fallback
                 return (
                     <mesh>
                         <octahedronGeometry args={[0.12, 0]} />

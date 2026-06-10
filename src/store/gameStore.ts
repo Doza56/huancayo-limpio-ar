@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type GameState = 'menu' | 'playing' | 'gameover'
+export type GameState = 'menu' | 'level_intro' | 'playing' | 'level_completed' | 'gameover' | 'campaign_completed'
 
 export interface GameStats {
     plastic_bottle: number
@@ -20,32 +20,97 @@ export interface Achievement {
 
 export const ACHIEVEMENTS: Achievement[] = [
     { id: 'first_recycle', name: 'Primer Reciclaje', description: '¡Reciclaste tu primer residuo!', icon: '🌱' },
-    { id: 'recycle_5', name: 'Protector Novato', description: 'Reciclaste 5 residuos', icon: '🧹' },
-    { id: 'recycle_10', name: 'Agente Guardián', description: 'Reciclaste 10 residuos', icon: '♻️' },
-    { id: 'recycle_20', name: 'Héroe del Mantaro', description: 'Reciclaste 20 residuos', icon: '🌎' }
+    { id: 'recycle_10', name: '10 Residuos Reciclados', description: 'Reciclaste 10 residuos en total', icon: '♻️' },
+    { id: 'recycle_50', name: '50 Residuos Reciclados', description: 'Reciclaste 50 residuos en total', icon: '🧹' },
+    { id: 'recycle_100', name: '100 Residuos Reciclados', description: 'Reciclaste 100 residuos en total', icon: '🌎' },
+    { id: 'mantaro_protector', name: 'Protector del Río Mantaro', description: 'Completaste con éxito el nivel del Río Mantaro', icon: '🌊' }
 ]
 
-export const ENVIRONMENTAL_FACTS = [
-    "Una botella plástica puede tardar cientos de años en degradarse.",
-    "Reciclar una lata ahorra energía y recursos naturales.",
-    "Separar residuos correctamente reduce la contaminación.",
-    "El reciclaje ayuda a proteger los ríos y áreas verdes."
+export interface LevelConfig {
+    level: number
+    name: string
+    story: string
+    difficulty: string
+    maxTargets: number
+    pctRecyclable: number
+    goal: number
+    fact: string
+}
+
+export const LEVELS: LevelConfig[] = [
+    {
+        level: 1,
+        name: "Calles Limpias",
+        story: "La ciudad necesita tu ayuda para comenzar el proceso de reciclaje.",
+        difficulty: "Fácil",
+        maxTargets: 8,
+        pctRecyclable: 0.90,
+        goal: 10,
+        fact: "Una botella plástica puede tardar cientos de años en degradarse. ¡Reciclarla evita que contamine nuestras calles!"
+    },
+    {
+        level: 2,
+        name: "Parques Verdes",
+        story: "Los espacios públicos deben mantenerse limpios para todos.",
+        difficulty: "Media",
+        maxTargets: 12,
+        pctRecyclable: 0.80,
+        goal: 20,
+        fact: "El reciclaje de papel y cartón salva millones de árboles y mantiene nuestros parques hermosos."
+    },
+    {
+        level: 3,
+        name: "Rescate del Río Mantaro",
+        story: "Los residuos están llegando al río. Debes detener la contaminación.",
+        difficulty: "Difícil",
+        maxTargets: 18,
+        pctRecyclable: 0.75,
+        goal: 30,
+        fact: "El Río Mantaro es un recurso natural fundamental para la región. Evitemos que plásticos e insumos químicos destruyan su ecosistema."
+    },
+    {
+        level: 4,
+        name: "Emergencia Ambiental",
+        story: "Una gran acumulación de residuos amenaza el entorno.",
+        difficulty: "Experto",
+        maxTargets: 25,
+        pctRecyclable: 0.70,
+        goal: 40,
+        fact: "Las pilas y baterías contienen metales pesados altamente tóxicos. Deben reciclarse de forma especializada para que no contaminen el suelo y el agua."
+    }
 ]
+
+export const getRankName = (xp: number): string => {
+    if (xp < 100) return "Aprendiz Ambiental"
+    if (xp < 300) return "Reciclador Urbano"
+    if (xp < 600) return "Protector Ecológico"
+    if (xp < 1000) return "Guardián del Mantaro"
+    return "Héroe Ambiental"
+}
 
 interface GameStore {
-    score: number // Representa el "Impacto Ambiental"
+    score: number // Puntos de Impacto Ambiental
     timeLeft: number
     gameState: GameState
     stats: GameStats
     unlockedAchievements: string[]
-    lastFact: string
     flashColor: 'green' | 'red' | null
-    startGame: () => void
+
+    // Campaña y Progresión
+    level: number
+    recycledInLevel: number
+    totalRecycled: number
+    xp: number
+
+    startCampaign: () => void
+    startGame: () => void // Wrapper para compatibilidad
+    startLevel: () => void
     endGame: () => void
     addScore: (points: number) => void
     recycleItem: (type: string) => void
     hitHazardous: (type: string) => void
     tickTimer: (delta: number) => void
+    nextLevel: () => void
     reset: () => void
 }
 
@@ -58,24 +123,41 @@ const initialStats: GameStats = {
     hazardous: 0
 }
 
-export const useGameStore = create<GameStore>((set) => ({
+export const useGameStore = create<GameStore>((set, get) => ({
     score: 0,
     timeLeft: 60,
     gameState: 'menu',
     stats: { ...initialStats },
     unlockedAchievements: [],
-    lastFact: '',
     flashColor: null,
 
-    startGame: () => set({
-        gameState: 'playing',
+    level: 1,
+    recycledInLevel: 0,
+    totalRecycled: 0,
+    xp: 0,
+
+    startCampaign: () => set({
+        gameState: 'level_intro',
+        level: 1,
+        recycledInLevel: 0,
+        totalRecycled: 0,
+        xp: 0,
         score: 0,
-        timeLeft: 60,
         stats: { ...initialStats },
         unlockedAchievements: [],
-        lastFact: ENVIRONMENTAL_FACTS[Math.floor(Math.random() * ENVIRONMENTAL_FACTS.length)],
-        flashColor: null
+        flashColor: null,
+        timeLeft: 60
     }),
+
+    startGame: () => {
+        get().startCampaign()
+    },
+
+    startLevel: () => set(() => ({
+        gameState: 'playing',
+        timeLeft: 60,
+        recycledInLevel: 0
+    })),
 
     endGame: () => set({ gameState: 'gameover' }),
 
@@ -88,20 +170,26 @@ export const useGameStore = create<GameStore>((set) => ({
             newStats[key] = (newStats[key] || 0) + 1
         }
 
-        const totalRecycled = newStats.plastic_bottle + newStats.aluminum_can + newStats.paper + newStats.cardboard + newStats.container
-        const newAchievements = [...state.unlockedAchievements]
+        const newRecycledInLevel = state.recycledInLevel + 1
+        const newTotalRecycled = state.totalRecycled + 1
+        const newXp = newTotalRecycled * 10
+        const currentLevelConfig = LEVELS[state.level - 1]
 
-        if (totalRecycled >= 1 && !newAchievements.includes('first_recycle')) {
+        const newAchievements = [...state.unlockedAchievements]
+        if (newTotalRecycled >= 1 && !newAchievements.includes('first_recycle')) {
             newAchievements.push('first_recycle')
         }
-        if (totalRecycled >= 5 && !newAchievements.includes('recycle_5')) {
-            newAchievements.push('recycle_5')
-        }
-        if (totalRecycled >= 10 && !newAchievements.includes('recycle_10')) {
+        if (newTotalRecycled >= 10 && !newAchievements.includes('recycle_10')) {
             newAchievements.push('recycle_10')
         }
-        if (totalRecycled >= 20 && !newAchievements.includes('recycle_20')) {
-            newAchievements.push('recycle_20')
+        if (newTotalRecycled >= 50 && !newAchievements.includes('recycle_50')) {
+            newAchievements.push('recycle_50')
+        }
+        if (newTotalRecycled >= 100 && !newAchievements.includes('recycle_100')) {
+            newAchievements.push('recycle_100')
+        }
+        if (state.level === 3 && newRecycledInLevel >= currentLevelConfig.goal && !newAchievements.includes('mantaro_protector')) {
+            newAchievements.push('mantaro_protector')
         }
 
         // Programar la limpieza del destello visual
@@ -109,15 +197,31 @@ export const useGameStore = create<GameStore>((set) => ({
             useGameStore.setState({ flashColor: null })
         }, 200)
 
+        // Verificar si se completó el nivel
+        const levelGoalMet = newRecycledInLevel >= currentLevelConfig.goal
+        let nextState: GameState = state.gameState
+
+        if (levelGoalMet) {
+            if (state.level >= LEVELS.length) {
+                nextState = 'campaign_completed'
+            } else {
+                nextState = 'level_completed'
+            }
+        }
+
         return {
             score: state.score + 100,
             stats: newStats,
+            recycledInLevel: newRecycledInLevel,
+            totalRecycled: newTotalRecycled,
+            xp: newXp,
             unlockedAchievements: newAchievements,
-            flashColor: 'green'
+            flashColor: 'green',
+            gameState: nextState
         }
     }),
 
-    hitHazardous: (_type) => set((state) => {
+    hitHazardous: () => set((state) => {
         const newStats = { ...state.stats }
         newStats.hazardous = (newStats.hazardous || 0) + 1
 
@@ -127,7 +231,7 @@ export const useGameStore = create<GameStore>((set) => ({
         }, 200)
 
         return {
-            score: state.score - 500,
+            score: Math.max(0, state.score - 500), // Evitar puntaje negativo si se prefiere, o dejar que baje
             stats: newStats,
             flashColor: 'red'
         }
@@ -141,12 +245,27 @@ export const useGameStore = create<GameStore>((set) => ({
         return { timeLeft: newTime }
     }),
 
+    nextLevel: () => set((state) => {
+        const nextLvl = state.level + 1
+        if (nextLvl > LEVELS.length) {
+            return { gameState: 'campaign_completed' }
+        }
+        return {
+            level: nextLvl,
+            gameState: 'level_intro',
+            recycledInLevel: 0
+        }
+    }),
+
     reset: () => set({
         gameState: 'menu',
         score: 0,
         timeLeft: 60,
         stats: { ...initialStats },
         unlockedAchievements: [],
-        lastFact: ''
+        level: 1,
+        recycledInLevel: 0,
+        totalRecycled: 0,
+        xp: 0
     })
 }))

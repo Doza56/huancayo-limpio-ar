@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { Html } from '@react-three/drei'
-import { useGameStore } from '../store/gameStore'
+import { useGameStore, LEVELS } from '../store/gameStore'
 import { Bullet } from './Bullet'
 import { Crystal } from './Crystal'
 import { Radar } from './Radar'
@@ -32,9 +32,8 @@ interface FloatingText {
 const RECYCLABLES = ['plastic_bottle', 'aluminum_can', 'paper', 'cardboard', 'container']
 const HAZARDOUS = ['used_battery', 'battery', 'toxic_waste', 'chemical']
 
-// Generador aleatorio que prioriza residuos reciclables (~75%) frente a peligrosos (~25%)
-const getRandomWasteType = (): string => {
-    if (Math.random() > 0.75) {
+const getRandomWasteTypeForLevel = (pctRecyclable: number): string => {
+    if (Math.random() > pctRecyclable) {
         return HAZARDOUS[Math.floor(Math.random() * HAZARDOUS.length)]
     }
     return RECYCLABLES[Math.floor(Math.random() * RECYCLABLES.length)]
@@ -42,7 +41,7 @@ const getRandomWasteType = (): string => {
 
 export function Scene() {
     const { camera } = useThree()
-    const { recycleItem, hitHazardous, gameState, endGame } = useGameStore()
+    const { level, recycleItem, hitHazardous, gameState } = useGameStore()
 
     // Referencias para la física
     const bulletsRef = useRef<BulletData[]>([])
@@ -52,16 +51,19 @@ export function Scene() {
     const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([])
     const [targets, setTargets] = useState<TargetData[]>([])
 
-    // Generar nuevos residuos al iniciar/reiniciar la partida
+    // Generar nuevos residuos al iniciar/reiniciar el nivel correspondiente
     useEffect(() => {
         if (gameState === 'playing') {
             setFloatingTexts([])
             setBullets([])
             bulletsRef.current = []
 
-            // Generamos 20 residuos distribuidos en una esfera alrededor del usuario
-            const newTargets = Array.from({ length: 20 }).map((_, i) => {
-                // Posicionar objetos en un radio de 2 a 5 metros alrededor del origen
+            const levelConfig = LEVELS[level - 1]
+            const max = levelConfig ? levelConfig.maxTargets : 8
+            const pctRec = levelConfig ? levelConfig.pctRecyclable : 0.90
+
+            // Generamos residuos distribuidos en una esfera alrededor del usuario
+            const newTargets = Array.from({ length: max }).map((_, i) => {
                 const theta = Math.random() * Math.PI * 2
                 const phi = Math.acos((Math.random() * 2) - 1)
                 const distance = 2.5 + Math.random() * 2.5 // Entre 2.5m y 5m
@@ -70,24 +72,24 @@ export function Scene() {
                     id: i,
                     position: [
                         distance * Math.sin(phi) * Math.cos(theta),
-                        Math.max(0.2, 1.2 + 1.2 * Math.cos(phi)), // Altura jugable y cómoda (altura de la vista)
+                        Math.max(0.2, 1.2 + 1.2 * Math.cos(phi)), // Altura jugable cómoda
                         distance * Math.sin(phi) * Math.sin(theta)
                     ] as [number, number, number],
-                    type: getRandomWasteType(),
-                    radius: 0.18 // Radio de la colisión unificado
+                    type: getRandomWasteTypeForLevel(pctRec),
+                    radius: 0.18
                 }
             })
             setTargets(newTargets)
         }
-    }, [gameState])
+    }, [gameState, level])
 
-    // Agregar un texto flotante en la posición 3D del impacto
+    // Agregar un texto flotante temporal en la posición 3D de la recolección
     const addFloatingText = (pos: [number, number, number], text: string, color: string) => {
         const id = Date.now() + Math.random()
         setFloatingTexts(prev => [...prev, { id, position: pos, text, color }])
         setTimeout(() => {
             setFloatingTexts(prev => prev.filter(ft => ft.id !== id))
-        }, 1500)
+        }, 1200) // Se desvanece a los 1.2 segundos
     }
 
     // Manejar el disparo (toque en pantalla)
@@ -95,23 +97,22 @@ export function Scene() {
         const handleTouch = () => {
             if (gameState !== 'playing') return
 
-            SoundSystem.init() // Inicializar el audio
-            SoundSystem.play('shoot')
+            SoundSystem.init() // Asegurar contexto de audio
+            SoundSystem.play('shoot') // EcoScanner sonido de pulso
 
             const startPos = camera.position.clone()
 
-            // Obtener dirección a la que apunta la cámara
+            // Dirección a la que apunta la cámara
             const direction = new THREE.Vector3()
             camera.getWorldDirection(direction)
 
             const newBullet: BulletData = {
-                id: Date.now(),
+                id: Date.now() + Math.random(),
                 position: startPos,
                 direction: direction,
                 createTime: performance.now()
             }
 
-            // Actualización para renderizado y físicas
             setBullets(prev => [...prev, newBullet])
             bulletsRef.current.push(newBullet)
         }
@@ -120,25 +121,25 @@ export function Scene() {
         return () => window.removeEventListener('click', handleTouch)
     }, [camera, gameState])
 
-    // Bucle de Física y Colisiones (useFrame se ejecuta cada frame)
+    // Bucle de Física y Colisiones (useFrame)
     useFrame((_, delta) => {
         if (gameState !== 'playing') return
 
         const now = performance.now()
-        const bulletSpeed = 15
+        const bulletSpeed = 16 // m/s (velocidad del haz de escaneo)
 
-        // 1. Mover burbujas de captura
+        // 1. Mover los pulsos de escaneo
         bulletsRef.current.forEach(b => {
             b.position.add(b.direction.clone().multiplyScalar(bulletSpeed * delta))
         })
 
-        // 2. Detección de colisiones e inactivación por tiempo de vida
+        // 2. Colisiones e inactividad por tiempo
         const bulletsToRemove: number[] = []
         const targetsToRemove: number[] = []
 
-        // Descartar burbujas con más de 2 segundos de vida
+        // Descartar pulsos con más de 1.8 segundos de vida
         bulletsRef.current.forEach(b => {
-            if (now - b.createTime > 2000) {
+            if (now - b.createTime > 1800) {
                 bulletsToRemove.push(b.id)
             }
         })
@@ -146,48 +147,64 @@ export function Scene() {
         bulletsRef.current.forEach(b => {
             if (bulletsToRemove.includes(b.id)) return
 
-            // Comprobar colisión contra cada residuo activo
             targets.forEach(t => {
                 if (targetsToRemove.includes(t.id)) return
 
                 const dist = b.position.distanceTo(new THREE.Vector3(...t.position))
-                // Margen de colisión: radio del objeto + radio de la burbuja (aprox 0.1)
-                if (dist < (t.radius + 0.1)) {
+                // Margen de colisión
+                if (dist < (t.radius + 0.12)) {
                     bulletsToRemove.push(b.id)
                     targetsToRemove.push(t.id)
 
                     const isHazardous = HAZARDOUS.includes(t.type)
                     if (isHazardous) {
-                        // Penalización por residuo peligroso
                         hitHazardous(t.type)
-                        SoundSystem.play('bomb')
-                        addFloatingText(t.position, "Residuo peligroso (-500)", "#f87171")
+                        SoundSystem.play('bomb') // Alerta de error
+                        addFloatingText(t.position, "Residuo peligroso", "#f87171")
                     } else {
-                        // Puntos por reciclaje correcto
                         recycleItem(t.type)
-                        SoundSystem.play('hit')
-                        addFloatingText(t.position, "Residuo reciclado (+100)", "#4ade80")
+                        SoundSystem.play('hit') // Sonido ecológico/amigable
+                        addFloatingText(t.position, "+100 Reciclado", "#4ade80")
                     }
                 }
             })
         })
 
-        // 3. Procesar las eliminaciones de residuos colisionados
+        // 3. Procesar eliminación y REPOSICIÓN CONTINUA de residuos
         if (targetsToRemove.length > 0) {
             setTargets(prev => {
-                const newTargets = prev.filter(t => !targetsToRemove.includes(t.id))
+                const remainingTargets = prev.filter(t => !targetsToRemove.includes(t.id))
                 
-                // Condición de victoria: no quedan residuos reciclables
-                const remainingRecyclables = newTargets.filter(t => RECYCLABLES.includes(t.type)).length
-                if (remainingRecyclables === 0) {
-                    endGame()
-                    SoundSystem.play('win')
+                const levelConfig = LEVELS[level - 1]
+                const max = levelConfig ? levelConfig.maxTargets : 8
+                const pctRec = levelConfig ? levelConfig.pctRecyclable : 0.90
+                
+                // Reponer residuos para mantener siempre el total máximo de residuos del nivel
+                const needed = max - remainingTargets.length
+                const replenished: TargetData[] = []
+
+                for (let k = 0; k < needed; k++) {
+                    const theta = Math.random() * Math.PI * 2
+                    const phi = Math.acos((Math.random() * 2) - 1)
+                    const distance = 2.5 + Math.random() * 2.5
+
+                    replenished.push({
+                        id: Date.now() + Math.random() + k,
+                        position: [
+                            distance * Math.sin(phi) * Math.cos(theta),
+                            Math.max(0.2, 1.2 + 1.2 * Math.cos(phi)),
+                            distance * Math.sin(phi) * Math.sin(theta)
+                        ] as [number, number, number],
+                        type: getRandomWasteTypeForLevel(pctRec),
+                        radius: 0.18
+                    })
                 }
-                return newTargets
+
+                return [...remainingTargets, ...replenished]
             })
         }
 
-        // 4. Procesar las eliminaciones de burbujas usadas o vencidas
+        // 4. Procesar eliminación de pulsos de escaneo
         if (bulletsToRemove.length > 0) {
             setBullets(prev => prev.filter(b => !bulletsToRemove.includes(b.id)))
             bulletsRef.current = bulletsRef.current.filter(b => !bulletsToRemove.includes(b.id))
@@ -196,16 +213,16 @@ export function Scene() {
 
     return (
         <>
-            <ambientLight intensity={0.6} />
+            <ambientLight intensity={0.65} />
             <directionalLight position={[5, 10, 3]} intensity={1.5} />
             <pointLight position={[-5, 5, -5]} intensity={0.5} />
 
-            {/* Renderizar los residuos activos en pantalla */}
+            {/* Residuos activos */}
             {targets.map(t => (
                 <Crystal key={t.id} position={t.position} type={t.type} />
             ))}
 
-            {/* Renderizar burbujas de captura en vuelo */}
+            {/* Haz de escaneo */}
             {bullets.map(b => (
                 <Bullet
                     key={b.id}
@@ -214,7 +231,7 @@ export function Scene() {
                 />
             ))}
 
-            {/* Textos flotantes 3D de recolección */}
+            {/* Textos de impacto flotantes 3D */}
             {floatingTexts.map(ft => (
                 <Html key={ft.id} position={ft.position} center>
                     <div className="floating-bubble-text" style={{ color: ft.color }}>
@@ -223,7 +240,7 @@ export function Scene() {
                 </Html>
             ))}
 
-            {/* Radar / Detector Ambiental */}
+            {/* Radar detector ambiental */}
             <Radar targets={targets} />
         </>
     )
