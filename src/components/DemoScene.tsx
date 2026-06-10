@@ -9,6 +9,7 @@ import { SoundSystem } from '../systems/SoundSystem'
 interface TargetData {
     id: number
     position: [number, number, number]
+    velocity: [number, number, number]
     type: string
     radius: number
     isGolden?: boolean
@@ -29,6 +30,28 @@ const getRandomWasteTypeForLevel = (pctRecyclable: number): string => {
         return HAZARDOUS[Math.floor(Math.random() * HAZARDOUS.length)]
     }
     return RECYCLABLES[Math.floor(Math.random() * RECYCLABLES.length)]
+}
+
+const getRandomVelocityForLevel = (level: number): [number, number, number] => {
+    let speed = 0
+    if (level === 1) {
+        speed = 0.04 + Math.random() * 0.04
+    } else if (level === 2) {
+        speed = 0.10 + Math.random() * 0.10
+    } else if (level === 3) {
+        speed = 0.25 + Math.random() * 0.20
+    } else {
+        speed = 0.55 + Math.random() * 0.40
+    }
+
+    const theta = Math.random() * Math.PI * 2
+    const phi = Math.acos((Math.random() * 2) - 1)
+
+    return [
+        speed * Math.sin(phi) * Math.cos(theta),
+        speed * Math.sin(phi) * Math.sin(theta) * 0.4,
+        speed * Math.cos(phi)
+    ]
 }
 
 // Componente interno con acceso a la cámara y renderizador de Three.js
@@ -56,10 +79,39 @@ function DemoSceneInner({ targets, setTargets, setLabels }: {
         setTimeout(() => setLabels(prev => prev.filter(l => l.id !== id)), 1200)
     }
 
-    //useFrame para sincronizar estado de Jefe y desvanecimiento de residuos dorados
-    useFrame(() => {
+    //useFrame para sincronizar estado de Jefe, movimiento y desvanecimiento de residuos dorados
+    useFrame((_, delta) => {
         if (gameState !== 'playing') return
         const now = performance.now()
+
+        // --- FÍSICA DE MOVIMIENTO DE LOS RESIDUOS (MODO DEMO) ---
+        setTargets(prev => prev.map(t => {
+            if (t.type === 'final_boss' || !t.velocity) return t
+
+            let x = t.position[0] + t.velocity[0] * delta
+            let y = t.position[1] + t.velocity[1] * delta
+            let z = t.position[2] + t.velocity[2] * delta
+
+            let vx = t.velocity[0]
+            let vy = t.velocity[1]
+            let vz = t.velocity[2]
+
+            // Rebotes en caja virtual de simulación
+            if (x < -3.5) { x = -3.5; vx = Math.abs(vx); }
+            else if (x > 3.5) { x = 3.5; vx = -Math.abs(vx); }
+
+            if (z < -3.5) { z = -3.5; vz = Math.abs(vz); }
+            else if (z > 3.5) { z = 3.5; vz = -Math.abs(vz); }
+
+            if (y < 0.2) { y = 0.2; vy = Math.abs(vy); }
+            else if (y > 3.0) { y = 3.0; vy = -Math.abs(vy); }
+
+            return {
+                ...t,
+                position: [x, y, z],
+                velocity: [vx, vy, vz]
+            }
+        }))
 
         // 1. Spawning del Jefe Final si se activa
         if (bossActive && !targets.some(t => t.type === 'final_boss') && !hasBeatenBoss) {
@@ -68,6 +120,7 @@ function DemoSceneInner({ targets, setTargets, setLabels }: {
                 {
                     id: 9999,
                     position: [0, 1.2, -2.5], // Posición central frente a la cámara por defecto
+                    velocity: [0, 0, 0],
                     type: 'final_boss',
                     radius: 0.55
                 }
@@ -104,6 +157,7 @@ function DemoSceneInner({ targets, setTargets, setLabels }: {
                             0.5 + Math.random() * 2,
                             (Math.random() - 0.5) * 7
                         ] as [number, number, number],
+                        velocity: getRandomVelocityForLevel(level),
                         type: getRandomWasteTypeForLevel(pctRec),
                         radius: 0.18,
                         isGolden: false
@@ -191,7 +245,8 @@ function DemoSceneInner({ targets, setTargets, setLabels }: {
                                     (Math.random() - 0.5) * 7,
                                     0.5 + Math.random() * 2,
                                     (Math.random() - 0.5) * 7
-                                ] as [number, number, number],
+                               ] as [number, number, number],
+                                velocity: getRandomVelocityForLevel(level),
                                 type: type,
                                 radius: 0.18,
                                 isGolden: isGolden,
@@ -263,6 +318,7 @@ export function DemoScene() {
                         0.5 + Math.random() * 2,
                         (Math.random() - 0.5) * 7
                     ] as [number, number, number],
+                    velocity: getRandomVelocityForLevel(level),
                     type: type,
                     radius: 0.18,
                     isGolden: isGolden,
